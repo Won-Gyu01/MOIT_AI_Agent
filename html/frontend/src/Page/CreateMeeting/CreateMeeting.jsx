@@ -52,23 +52,45 @@ const CreateMeeting = () => {
                     withCredentials: true,
                 });
                 imageUrl = res.data.imageUrl;
-            } catch (error) {
-                console.error('이미지 업로드 실패:', error);
-                Swal.fire('오류', '이미지 업로드에 실패했습니다.', 'error');
-                setIsSubmitting(false);
-                return;
+            } catch (uploadError) {
+                console.error('이미지 업로드 실패:', uploadError);
+                const result = await Swal.fire({
+                    title: '이미지 업로드 실패',
+                    text: '기본 이미지로 모임을 생성하시겠습니까?',
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonText: '네',
+                    cancelButtonText: '아니요'
+                });
+
+                if (!result.isConfirmed) {
+                    setIsSubmitting(false);
+                    return;
+                }
+                // imageUrl은 빈 문자열로 유지됩니다.
             }
         }
 
         try {
-            const meetingData = { ...formData, coverImage: imageUrl };
-            const response = await axios.post('/api/meetings', meetingData, { withCredentials: true });
+            const meetingData = { 
+                ...formData, 
+                coverImage: imageUrl,
+            };
+
+            // AI 서버(main.py)는 user_input 객체 안에 모든 정보가 담겨있기를 기대합니다.
+            // Node.js 백엔드에서 이 형식으로 변환하여 AI 서버로 전달해야 합니다.
+            // 프론트엔드는 최종 모임 데이터와 AI 분석에 필요한 데이터를 모두 보냅니다.
+            const payload = {
+                ...meetingData, // Node.js가 모임을 생성할 때 사용할 데이터
+                user_input: { ...meetingData } // Node.js가 AI 서버로 전달할 데이터
+            };
+            const response = await axios.post('/api/meetings', payload, { withCredentials: true });
 
             if (response.data.action === 'recommend') {
                 navigate('/meetings/recommend', {
                     state: {
                         recommendations: response.data.recommendations,
-                        newMeetingData: response.data.newMeetingData
+                        newMeetingData: meetingData
                     }
                 });
             } else if (response.data.action === 'created') {
@@ -79,7 +101,6 @@ const CreateMeeting = () => {
                     timer: 1500,
                     showConfirmButton: false
                 });
-                // 👇 --- [수정] response.data.meeting._id 로 올바르게 ID를 가져옵니다. --- 👇
                 const newMeetingId = response.data.meeting._id;
                 navigate(`/meetings/${newMeetingId}`);
             } else {
@@ -87,8 +108,8 @@ const CreateMeeting = () => {
             }
 
         } catch (error) {
-            console.error('모임 생성 실패:', error);
-            Swal.fire('오류', '모임 생성에 실패했습니다.', 'error');
+            console.error('모임 생성 또는 추천 과정 실패:', error);
+            Swal.fire('오류', '모임 생성에 실패했습니다. ' + (error.response?.data?.message || ''), 'error');
         } finally {
             setIsSubmitting(false);
         }
